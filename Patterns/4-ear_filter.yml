@@ -1,0 +1,76 @@
+filter {
+  if [fields][type] == "ear" {
+   
+    grok {
+      # Chemin patterns personnalisé.
+      patterns_dir => ["/etc/logstash/patterns/patterns_date"]
+      match => { "source" => [ "/*/*/*\.%{DATESRCEAR:date}" ] }
+     
+    }
+    
+    grok {
+      # Si match avec "message", créé le champ : "time" et applique les fonctions suivantes appartenant au plugin grok.
+      match => { "message" => [ "^%{TIME:time}" ] }
+      add_field => { "logtimestamp" => "%{date} %{time}" }
+    }
+    
+    # Plugin permettant de gérer les dates. (Entre dans le plugin si match dans grok)
+    date {
+      # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".
+      match => [ "logtimestamp", "YYYY-MM-dd HH:mm:ss,SSS" ]
+      
+      # Envoie logtimestamp dans le paramètre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+      target => "@timestamp"
+      locale => "en"
+      timezone => "Europe/Paris"
+    }  
+    
+    
+    grok {
+      # Chemin patterns personnalisé.
+      patterns_dir => ["/etc/logstash/patterns/patterns_ear"]
+      
+      # Si match avec "message", créé les champs : "log-level, class, thread, app, protocole, name, source2, action, username, patient, visit et payload " et applique les fonctions suivantes appartenant au plugin grok.
+      match => { "message" => [ "^%{TIME}%{SPACE}%{LOGLEVEL:log-level}%{SPACE}\[%{DATA:class}\]%{SPACE}\(%{DATA:thread}\)%{SPACE}\[%{APP:app}\]%{SPACE}\[TrailService\]%{SPACE}\[%{PNS}\]%{SPACE}%{ACTION2}%{SPACE}(\[%{PATIENTVISIT}\]|\[%{USERNAME}\])%{SPACE}%{GREEDYDATA:payload}" ] }      
+      
+      # Ajoute un tag "TrailService"
+      add_tag => [ "TrailService" ] 
+    }  
+    
+    # Si match pas avec le premier filtre il reçoit le tag "_grokparsefailure" et entre dans cette condition.
+    if "_grokparsefailure" in [tags] {
+    
+      grok {
+        # Chemin patterns personnalisé.
+        patterns_dir => ["/etc/logstash/patterns/patterns_ear"]
+        
+        # Si match avec "message", créé les champs : "log-level, class, thread, app, protocole, patient, visit, action et payload " et applique les fonctions suivantes appartenant au plugin grok.
+        match => { "message" => [ "^%{TIME}%{SPACE}%{LOGLEVEL:log-level}%{SPACE}\[%{DATA:class}\]%{SPACE}\(%{DATA:thread}\)%{SPACE}\[%{APP:app}\]%{SPACE}\[%{PROTOCOL}\]%{SPACE}\[%{PATIENTVISIT}\]%{SPACE}\[%{DATA:action}\]%{GREEDYDATA:payload}" ] }      
+        add_tag => [ "format1" ] 
+        remove_tag => [ "_grokparsefailure" ]  
+      }
+    }
+    # Si match pas avec le premier filtre il reçoit le tag "_grokparsefailure" et entre dans cette condition.
+    if "_grokparsefailure" in [tags] {
+    
+      grok {
+        # Chemin patterns personnalisé.
+        patterns_dir => ["/etc/logstash/patterns/patterns_ear"]
+        
+        # Si match avec "message", créé les champs : "log-level, class, thread, app(si existe) et payload " et applique les fonctions suivantes appartenant au plugin grok.
+        match => { "message" => [ "^%{TIME}%{SPACE}%{LOGLEVEL:log-level}%{SPACE}\[%{DATA:class}\]%{SPACE}\(%{DATA:thread}\)%{SPACE}(\[%{APP:app}\])?%{SPACE}%{GREEDYDATA:payload}" ] } 
+        
+        # Ajoute le tag "format2" et suprime le tag "_grokparsefailure".
+        add_tag => [ "format2" ]
+        
+        # Suprime le tag "_grokparsefailure".
+        remove_tag => [ "_grokparsefailure" ]       
+      }
+    }   
+    
+    mutate {
+      # Supprime les champs "date", "time" et "logtimestamp".
+      remove_field => [ "logtimestamp", "date", "time"  ]
+    }       
+  }
+}

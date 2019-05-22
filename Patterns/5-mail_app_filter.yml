@@ -1,0 +1,63 @@
+filter {
+  if [fields][type] == "mail" {
+  
+    # Supprime les debuts de lignes de wrapper.
+    mutate {
+        gsub => ["message", "^.{42}", ""]
+    }
+  
+    grok {
+      # Si match avec "message" (une ligne), créé les champs : "log-level, dateeu et payload" et applique les fonctions suivantes appartenant au plugin grok.
+      match => [ "message", "%{DATE_EU:dateeu}%{SPACE}%{TIME:time}%{SPACE}%{LOGLEVEL:log-level}%{SPACE}-%{SPACE}%{GREEDYDATA:payload}" ]
+      
+      # Ajoute un champs "logtimestamp" qui a la valeur des champs "dateeu" et "time" créé précédemment.    ! Ne pas oublier l'espace 
+      add_field => { "logtimestamp" => "%{dateeu} %{time}" }
+    }
+    
+    # Plugin permettant de gérer les dates. (Entre dans le plugin si match dans grok)
+    date {
+    
+        # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".
+        match => [ "logtimestamp", "dd/MM/YYYY HH:mm:ss,SSS" ]
+        
+        # Envoie logtimestamp dans le paramètre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+        target => "@timestamp"
+        locale => "en"
+        timezone => "Europe/Paris"
+    }
+    
+    # Si match pas avec le premier filtre il reçoit le tags "_grokparsefailure" et entre dans cette condition.
+    if "_grokparsefailure" in [tags] {
+    
+      grok {
+        # Chemin patterns personnalisé.
+        patterns_dir => ["/etc/logstash/patterns/patterns_date"]
+        
+        # Si match avec "source"(chemin du fichier log), créé le champ : "date" et applique les fonctions suivantes appartenant au plugin grok.
+        match => { "source" =>  [ "/*/*/%{DATA:platform}\.%{DATESRC:date}" ] }
+        
+        # Ajoute un champs "logstamp" qui a la valeur des champs "date"
+        add_field => { "logtimestamp" => "%{date}" }  
+                 
+      }
+    
+      date {
+        # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".   ! Le temp n'est pas obligatoire par defaut "00:00:00,000"
+        match => [ "logtimestamp", "YYYYMMdd" ]
+        
+        # Envoie logtimestamp dans le paramètre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+        target => "@timestamp"
+        locale => "en"
+        timezone => "Europe/Paris"
+      }
+      
+    }
+    
+    mutate {
+        # Supprime les champs "datetime" et "logstamp".
+        remove_field => [ "logtimestamp", "dateeu", "time", "date"]
+    }
+  
+  }
+
+}

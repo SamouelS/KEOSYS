@@ -1,0 +1,110 @@
+filter {
+  if [fields][type] == "ftp" {
+  
+    # Copie "message" dans le champ "message1".
+    mutate {
+      copy => {"message" => "message1"}     
+    }
+    
+    # Supprime les debuts de lignes de wrapper de "message1".
+    mutate {
+      gsub => ["message1", "^.*\|.*\|.*\| ", ""]
+    }
+    
+    grok {
+      # Chemin patterns personnalisé.
+      patterns_dir => ["/etc/logstash/patterns/patterns_date"]
+      patterns_dir => ["/etc/logstash/patterns/patterns_wrapper"]
+ 
+      # Si match avec "message" (copie d'une ligne), créé les champs : "log-level, date et payload" et applique les fonctions suivantes appartenant au plugin grok.
+      match => [ "message1", "%{CUSTOMDATE1:datetime}%{SPACE}%{GREEDYDATA}%{LOGLEVEL:log-level}:%{SPACE}%{GREEDYDATA:payload}" ]
+ 
+      # Ajoute un champs "logstamp" qui a la valeur du champs "datetime" créé précédemment.
+      add_field => { "logtimestamp" => "%{datetime}" }
+    }
+ 
+    # Plugin permettant de gérer les dates. (Entre dans le plugin si match dans grok)
+    date {
+      
+      # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".
+      match => [ "logtimestamp", "MMM dd, YYYY hh:mm:ss aa" ]
+ 
+      # Envoie logtimestamp dans le paramètre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+      target => "@timestamp" 
+      locale => "en"
+      timezone => "Europe/Paris"
+    }
+    
+    # Si match pas avec le premier filtre il reçoit le tags "_grokparsefailure" et entre dans cette condition.
+    if "_grokparsefailure" in [tags] {
+    
+      grok {
+        # Si match avec "message1" (une ligne), créé les champs : "log-level, dateeu, time et payload" et applique les fonctions suivantes appartenant au plugin grok.
+        match => [ "message", "%{TIMESTAMP_ISO8601:datetime}%{SPACE}%{LOGLEVEL:log-level}%{SPACE}\[%{GREEDYDATA:info}\]%{SPACE}%{GREEDYDATA:payload}" ]
+        
+        # Ajoute un champs "logstamp" qui a la valeur du champs "datetime" créé précédemment.
+        add_field => { "logtimestamp" => "%{datetime}" }
+        
+        # Ajoute le tag "newLog" et supprime les tags "_dateparsefailure" et "_grokparsefailure".
+        add_tag => [ "newLog" ]  
+        remove_tag => [ "_grokparsefailure", " _dateparsefailure" ] 
+      }
+      
+      # Plugin permettant de gérer les dates. (Entre dans le plugin si match dans grok)
+      date {
+        
+        # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".
+        match => [ "logtimestamp", "YYYY-MM-dd HH:mm:ss.SSS" ]
+        
+        # Envoie logtimestamp dans le paramètre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+        target => "@timestamp"
+        locale => "en"
+        timezone => "Europe/Paris"       
+      }
+      
+      if "_dateparsefailure" in [tags] {
+      
+        # Plugin permettant de gérer les dates. (Entre dans le plugin si match dans grok)
+        date {
+    
+          # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".
+          match => [ "logtimestamp", "YYYY-MM-dd HH:mm:ss" ]
+       
+          # Envoie logtimestamp dans le paramètre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+          target => "@timestamp"
+          locale => "en"
+          timezone => "Europe/Paris"
+        }
+      }
+    }
+ 
+    # Si match pas avec le premier filtre il reçoit le tags "_grokparsefailure".
+    if "_grokparsefailure" in [tags] {
+ 
+      grok {
+        # Chemin patterns personnalisé.
+        patterns_dir => ["/etc/logstash/patterns/patterns_date"]
+        
+        # Si match avec "source"(chemin du fichier log), créé le champ : "date" et applique les fonctions suivantes appartenant au plugin grok.
+        match => { "source" => [ "/*/*/*\.%{DATESRC:date}" ] }
+      }
+      
+      # Plugin permettant de gérer les dates. (Entre dans le plugin si match dans grok)
+      date {
+      
+        # Si match avec le format de date, applique les fonctions suivantes appartenant au plugin "date".
+        match => [ "date", "YYYYMMdd" ]
+ 
+        # Envoie logtimestamp dans le paramettre @timestamp de kibana, pour que la ligne en question ai une date correspondant a sa date de création.
+        target => "@timestamp"
+        locale => "en"
+        timezone => "Europe/Paris"
+      }
+    }
+ 
+    mutate {
+      # Supprime les champs "datetime" et "logstamp".
+      remove_field => [ "logtimestamp", "date", "datetime", "message1" ]
+    }
+  } 
+}
